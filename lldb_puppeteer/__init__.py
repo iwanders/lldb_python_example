@@ -61,15 +61,30 @@ class Debugger:
         target = self.dbg.GetDummyTarget()
         process = target.AttachToProcessWithID(listener, pid, err)
         if not process:
-            raise LLDBError(f"Failed to attach (wrong pid? or lldb-server address hardcoded? use "
+            raise LLDBError("Failed to attach (wrong pid? or lldb-server address hardcoded? use "
                             " strace, stat(\"/usr/bin/lldb-server-13.0.1\", 0x7ffc2d2bd228) = -1 "
-                            "ENOENT (No such file or directory) ): {err}")
+                            f"ENOENT (No such file or directory) ): {err}")
         event = lldb.SBEvent()
         if self.remote:
             res = listener.WaitForEvent(5, event)
             if not res:
                 raise LLDBError(f"Failed to attach.")
         return Target(target), Process(process, listener)
+
+    def load_core_file(self, core_path):
+        # target = self.dbg.GetDummyTarget()
+        err = lldb.SBError()
+        # process = target.LoadCore(core_path, err)
+        target = self.dbg.CreateTarget(core_path)
+        if not target:
+            raise LLDBError(f"failed to create target: {err}")
+
+        process = target.LoadCore(core_path, err)
+        
+        if not process:
+            raise LLDBError(f"failed to load core: {err}")
+        return Target(target), Process(process, None)
+        
 
     def __str__(self):
         return f"<Debugger {str(self.dbg)}>"
@@ -88,8 +103,8 @@ class Process:
     def __init__(self, process, listener):
         self.process = process
         self.listener = listener
-        state = self.state
-        self.start() # Kick it from the 'connected' state to something sane.
+        if (listener):
+            self.start() # Kick it from the 'connected' state to something sane.
 
     def __str__(self):
         return f"<Process {str(self.process)}>"
@@ -97,7 +112,7 @@ class Process:
     def _wait_on_event(self, action=""):
         event = lldb.SBEvent()
         res = self.listener.WaitForEvent(5, event)
-        print(f"Got {event} for action {action}")
+        # print(f"Got {event} for action {action}")
         if not res:
             raise LLDBError(f"Failed awaiting event during action {action}.")
 
@@ -130,7 +145,8 @@ class Process:
     def __del__(self):
         # Trying to detach gracefully, else we take the attached process with us?
         # print("Shutdown, detaching")
-        self.process.Detach()
+        if self.process:
+            self.process.Detach()
 
     @property
     def state(self):
@@ -150,7 +166,7 @@ class Process:
         Something to get a quick 'where are we'...
     """
     def print_bt(self):
-        if self.state != "stopped":
+        if self.listener and self.state != "stopped":
             self.stop()
             self._wait_on_state("stopped")
 
@@ -166,6 +182,13 @@ class Process:
             
         for frame in thread.frames:
             print(frame)
+
+    # Magic method to dispatch anything we don't provide to the debugger itself.
+    def __getattr__(self, attr):
+        if attr in self.__class__.__dict__:
+            return getattr(self, attr)
+        else:
+            return getattr(self.process, attr)
 
 
 class Target:
@@ -183,23 +206,43 @@ class Target:
 
     def breakpoint_by_address(self, addr):
         res = self.target.BreakpointCreateByAddress(addr)
+        print(res)
+        print(res.GetID())
         if not res:
             raise LLDBError(f"Failed to make breakpoint at 0x{addr:0>8x}")
         return Breakpoint(res)
 
-
-# SetScriptCallbackBody only takes a script body, like a string of python code.
-# And that probably won't run in this interpreter...
 class Breakpoint:
-    def __str__(self):
-        return f"<Breakpoint {str(self.breakpoint)}>"
+    def __init__(self, bp):
+        self.breakpoint = bp
 
-    def __init__(self, breakpoint):
-        self.breakpoint = breakpoint
+    def __hash__(self):
+        return self.breakpoint.GetID()
 
-    def __getattr__(self, attr):
-        if attr in self.__class__.__dict__:
-            return getattr(self, attr)
-        else:
-            return getattr(self.breakpoint, attr)
+    def __eq__(self, other):
+        return self.breakpoint.GetID() == other.breakpoint.GetID()
 
+# This is totally not a lldb concept... 
+class CallbackHandler:
+    def __init__(self, process):
+        self.process = process
+        self.bp_handlers = {}
+
+    def loop_for(self, duration=float("inf")):
+        z = time.time()
+        while (time.time() - z < duration):
+            res = self.process.continue_until_event()
+            print(res)
+            if res:
+                if lldb.SBBreakpoint.EventIsBreakpointEvent(res) or True:
+                    # print("is breakpoint")
+                    # Wow... this doesn't work, we get events when we SET
+                    # a break point, not when we hit one :/
+                    bp = lldb.SBBreakpoint.GetBreakpointFromEvent(res)
+                    print(f"bp id: {bp.GetID()}")
+                    event_bp = Breakpoint(bp)
+                    self.bp_handlers[event_bp](self.process, event_bp)
+
+
+    def register_breakpoint(self, bp, f):
+        self.bp_handlers[bp] = f
