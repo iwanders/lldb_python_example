@@ -190,6 +190,13 @@ class Process:
         else:
             return getattr(self.process, attr)
 
+    def loop_callback(self, f, duration=float("inf")):
+        z = time.time()
+        while (time.time() - z < duration):
+            res = self.continue_until_event()
+            if res:
+                f(process=self, event=res)
+            self.start()
 
 class Target:
     def __str__(self):
@@ -206,43 +213,6 @@ class Target:
 
     def breakpoint_by_address(self, addr):
         res = self.target.BreakpointCreateByAddress(addr)
-        print(res)
-        print(res.GetID())
         if not res:
             raise LLDBError(f"Failed to make breakpoint at 0x{addr:0>8x}")
-        return Breakpoint(res)
-
-class Breakpoint:
-    def __init__(self, bp):
-        self.breakpoint = bp
-
-    def __hash__(self):
-        return self.breakpoint.GetID()
-
-    def __eq__(self, other):
-        return self.breakpoint.GetID() == other.breakpoint.GetID()
-
-# This is totally not a lldb concept... 
-class CallbackHandler:
-    def __init__(self, process):
-        self.process = process
-        self.bp_handlers = {}
-
-    def loop_for(self, duration=float("inf")):
-        z = time.time()
-        while (time.time() - z < duration):
-            res = self.process.continue_until_event()
-            print(res)
-            if res:
-                if lldb.SBBreakpoint.EventIsBreakpointEvent(res) or True:
-                    # print("is breakpoint")
-                    # Wow... this doesn't work, we get events when we SET
-                    # a break point, not when we hit one :/
-                    bp = lldb.SBBreakpoint.GetBreakpointFromEvent(res)
-                    print(f"bp id: {bp.GetID()}")
-                    event_bp = Breakpoint(bp)
-                    self.bp_handlers[event_bp](self.process, event_bp)
-
-
-    def register_breakpoint(self, bp, f):
-        self.bp_handlers[bp] = f
+        return res
