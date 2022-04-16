@@ -27,6 +27,7 @@ class Debugger:
     def __init__(self):
         self.dbg = lldb.SBDebugger.Create()
         self.dbg.SetAsync(True)
+        self.remote = False
 
     def get_platforms(self):
         entries = []
@@ -43,6 +44,7 @@ class Debugger:
 
 
     def connect(self, host, port):
+        self.remote = True
         options = lldb.SBPlatformConnectOptions(f"connect://{host}:{port}")
         active_p = self.dbg.GetSelectedPlatform()
         # print(active_p.GetName())
@@ -56,15 +58,18 @@ class Debugger:
     def attach_to_pid(self, pid):
         listener = self.dbg.GetListener()
         err = lldb.SBError()
-        dummy = self.dbg.GetDummyTarget()
-        process = dummy.AttachToProcessWithID(listener, pid, err)
+        target = self.dbg.GetDummyTarget()
+        process = target.AttachToProcessWithID(listener, pid, err)
         if not process:
-            raise LLDBError(f"Failed to attach (wrong pid?): {err}")
+            raise LLDBError(f"Failed to attach (wrong pid? or lldb-server address hardcoded? use "
+                            " strace, stat(\"/usr/bin/lldb-server-13.0.1\", 0x7ffc2d2bd228) = -1 "
+                            "ENOENT (No such file or directory) ): {err}")
         event = lldb.SBEvent()
-        res = listener.WaitForEvent(5, event)
-        if not res:
-            raise LLDBError(f"Failed to attach.")
-        return Process(process, listener)
+        if self.remote:
+            res = listener.WaitForEvent(5, event)
+            if not res:
+                raise LLDBError(f"Failed to attach.")
+        return Target(target), Process(process, listener)
 
     def __str__(self):
         return f"<Debugger {str(self.dbg)}>"
@@ -84,6 +89,7 @@ class Process:
         self.process = process
         self.listener = listener
         state = self.state
+        self.start() # Kick it from the 'connected' state to something sane.
 
     def __str__(self):
         return f"<Process {str(self.process)}>"
@@ -102,12 +108,29 @@ class Process:
             raise LLDBError(f"Failed to stop the process.")
         self._wait_on_event("stop")
 
-
     def start(self):
+        if self.state == "running":
+            return # nothing to do
         res = self.process.Continue()
         if not res:
             raise LLDBError(f"Failed to continue the process.")
         self._wait_on_event("continue")
+
+
+    def continue_until_event(self, timeout=1):
+        self.start()
+
+        # Now, go into a blocking loop until some event happens.
+        event = lldb.SBEvent()
+        res = self.listener.WaitForEvent(timeout, event)
+        if not res:
+            return None
+        return event
+            
+    def __del__(self):
+        # Trying to detach gracefully, else we take the attached process with us?
+        # print("Shutdown, detaching")
+        self.process.Detach()
 
     @property
     def state(self):
@@ -145,13 +168,38 @@ class Process:
             print(frame)
 
 
+class Target:
+    def __str__(self):
+        return f"<Target {str(self.target)}>"
 
+    def __init__(self, target):
+        self.target = target
 
-
-    # Magic method to dispatch anything we don't provide to the process itself.
     def __getattr__(self, attr):
         if attr in self.__class__.__dict__:
             return getattr(self, attr)
         else:
-            return getattr(self.process, attr)
+            return getattr(self.target, attr)
+
+    def breakpoint_by_address(self, addr):
+        res = self.target.BreakpointCreateByAddress(addr)
+        if not res:
+            raise LLDBError(f"Failed to make breakpoint at 0x{addr:0>8x}")
+        return Breakpoint(res)
+
+
+# SetScriptCallbackBody only takes a script body, like a string of python code.
+# And that probably won't run in this interpreter...
+class Breakpoint:
+    def __str__(self):
+        return f"<Breakpoint {str(self.breakpoint)}>"
+
+    def __init__(self, breakpoint):
+        self.breakpoint = breakpoint
+
+    def __getattr__(self, attr):
+        if attr in self.__class__.__dict__:
+            return getattr(self, attr)
+        else:
+            return getattr(self.breakpoint, attr)
 
