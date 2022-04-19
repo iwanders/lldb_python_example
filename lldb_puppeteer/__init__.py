@@ -63,6 +63,7 @@ class Debugger:
         if not process:
             raise LLDBError("Failed to attach (wrong pid/name? or lldb-server address hardcoded? use "
                             " strace, stat(\"/usr/bin/lldb-server-13.0.1\", 0x7ffc2d2bd228) = -1 "
+                            " or run echo 0 > /proc/sys/kernel/yama/ptrace_scope to allow non root "
                             f"ENOENT (No such file or directory) ): {error}")
         event = lldb.SBEvent()
         if self.remote:
