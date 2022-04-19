@@ -4,6 +4,7 @@ from . import monkeypatch
 from .exception import LLDBError
 from .util import *
 import time
+import struct
 
 # SBPlatform objects can be created and then used to connect to a remote platform which allows the SBPlatform to be used to get a list of the current processes on the remote host, attach to one of those processes, install programs on the remote system, attach and launch processes, and much more.
 # https://lldb.llvm.org/python_reference/lldb.SBPlatform-class.html
@@ -24,9 +25,9 @@ import time
     A helper class to make it easier to work with async lldb interaction.
 """
 class Debugger:
-    def __init__(self):
+    def __init__(self, async=True):
         self.dbg = lldb.SBDebugger.Create()
-        self.dbg.SetAsync(True)
+        self.dbg.SetAsync(async)
         self.remote = False
 
     def get_platforms(self):
@@ -54,22 +55,27 @@ class Debugger:
     def cmd(self, v):
         return self.dbg.cmd(v)
 
-
-    def attach_to_pid(self, pid):
+    def _attach_method(self, method):
         listener = self.dbg.GetListener()
-        err = lldb.SBError()
+        error = lldb.SBError()
         target = self.dbg.GetDummyTarget()
-        process = target.AttachToProcessWithID(listener, pid, err)
+        process = method(target, listener, error)
         if not process:
-            raise LLDBError("Failed to attach (wrong pid? or lldb-server address hardcoded? use "
+            raise LLDBError("Failed to attach (wrong pid/name? or lldb-server address hardcoded? use "
                             " strace, stat(\"/usr/bin/lldb-server-13.0.1\", 0x7ffc2d2bd228) = -1 "
-                            f"ENOENT (No such file or directory) ): {err}")
+                            f"ENOENT (No such file or directory) ): {error}")
         event = lldb.SBEvent()
         if self.remote:
             res = listener.WaitForEvent(5, event)
             if not res:
                 raise LLDBError(f"Failed to attach.")
         return Target(target), Process(process, listener)
+
+    def attach_to_pid(self, pid):
+        return self._attach_method(lambda t, l, e: t.AttachToProcessWithID(l, pid, e))
+
+    def attach_to_name(self, name, wait_for=False):
+        return self._attach_method(lambda t, l, e: t.AttachToProcessWithName(l, name, wait_for, e))
 
     def load_core_file(self, core_path):
         # target = self.dbg.GetDummyTarget()
@@ -131,6 +137,8 @@ class Process:
             raise LLDBError(f"Failed to continue the process.")
         self._wait_on_event("continue")
 
+    def resume(self):
+        return self.start()
 
     def continue_until_event(self, timeout=1):
         self.start()
@@ -190,13 +198,25 @@ class Process:
         else:
             return getattr(self.process, attr)
 
-    def loop_callback(self, f, duration=float("inf")):
+    def loop_callback(self, f, duration=float("inf"), dt = 0):
         z = time.time()
         while (time.time() - z < duration):
-            res = self.continue_until_event()
+            res = self.continue_until_event(dt)
             if res:
                 f(process=self, event=res)
             self.start()
+
+    def read_memory(self, size, offset):
+        error = lldb.SBError()
+        content = self.process.ReadMemory(offset, size, error)
+        if not error.Success():
+            raise LLDBError(f"Failed to read memory at 0x{ptr:0>16x} of 0x{size:0>16x}")
+        return bytes(content)
+
+    def unpack_from(self, spec, offset):
+        size = struct.calcsize(spec)
+        new_bytes = self.read_memory(size, offset)
+        return struct.unpack(spec, new_bytes)
 
 class Target:
     def __str__(self):
@@ -211,8 +231,3 @@ class Target:
         else:
             return getattr(self.target, attr)
 
-    def breakpoint_by_address(self, addr):
-        res = self.target.BreakpointCreateByAddress(addr)
-        if not res:
-            raise LLDBError(f"Failed to make breakpoint at 0x{addr:0>8x}")
-        return res
