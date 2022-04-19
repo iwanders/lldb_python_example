@@ -210,7 +210,7 @@ class Process:
         error = lldb.SBError()
         content = self.process.ReadMemory(offset, size, error)
         if not error.Success():
-            raise LLDBError(f"Failed to read memory at 0x{ptr:0>16x} of 0x{size:0>16x}")
+            raise LLDBError(f"Failed to read memory at 0x{offset:0>16x} of size 0x{size:0>16x}")
         return bytes(content)
 
     def unpack_from(self, spec, offset):
