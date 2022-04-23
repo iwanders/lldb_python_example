@@ -207,7 +207,7 @@ class Process:
                 f(process=self, event=res)
             self.start()
 
-    def read_memory(self, size, offset):
+    def read_memory(self, offset, size):
         error = lldb.SBError()
         content = self.process.ReadMemory(offset, size, error)
         if not error.Success():
@@ -216,7 +216,7 @@ class Process:
 
     def unpack_from(self, spec, offset):
         size = struct.calcsize(spec)
-        new_bytes = self.read_memory(size, offset)
+        new_bytes = self.read_memory(offset=offset, size=size)
         return struct.unpack(spec, new_bytes)
 
 class Target:
