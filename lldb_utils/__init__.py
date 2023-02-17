@@ -5,6 +5,7 @@ from .exception import LLDBError
 from .util import *
 import time
 import struct
+from .maps import get_process_maps
 
 # SBPlatform objects can be created and then used to connect to a remote platform which allows the SBPlatform to be used to get a list of the current processes on the remote host, attach to one of those processes, install programs on the remote system, attach and launch processes, and much more.
 # https://lldb.llvm.org/python_reference/lldb.SBPlatform-class.html
@@ -122,6 +123,10 @@ class Process:
         # print(f"Got {event} for action {action}")
         if not res:
             raise LLDBError(f"Failed awaiting event during action {action}.")
+
+    def process_maps(self):
+        pid = self.process.id
+        return get_process_maps(pid)
 
     def stop(self):
         # if self.state != "stopped":
