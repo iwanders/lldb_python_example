@@ -26,9 +26,9 @@ from .maps import get_process_maps
     A helper class to make it easier to work with async lldb interaction.
 """
 class Debugger:
-    def __init__(self, async=True):
+    def __init__(self, asynchronous=True):
         self.dbg = lldb.SBDebugger.Create()
-        self.dbg.SetAsync(async)
+        self.dbg.SetAsync(asynchronous)
         self.remote = False
 
     def get_platforms(self):
@@ -62,10 +62,10 @@ class Debugger:
         target = self.dbg.GetDummyTarget()
         process = method(target, listener, error)
         if not process:
-            raise LLDBError("Failed to attach (wrong pid/name? or lldb-server address hardcoded? use "
-                            " strace, stat(\"/usr/bin/lldb-server-13.0.1\", 0x7ffc2d2bd228) = -1 "
-                            " or run echo 0 > /proc/sys/kernel/yama/ptrace_scope to allow non root "
-                            f"ENOENT (No such file or directory) ): {error}")
+            raise LLDBError("Failed to attach (wrong pid/name? or lldb-server not correct? Set  "
+                            "LLDB_DEBUGSERVER_PATH to the lldb-server binary, the default location "
+                            " is odd. Or run echo 0 > /proc/sys/kernel/yama/ptrace_scope to allow "
+                            f"non root attaching: {error}")
         event = lldb.SBEvent()
         if self.remote:
             res = listener.WaitForEvent(5, event)
