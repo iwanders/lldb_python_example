@@ -47,6 +47,15 @@ def watchpoint_by_address(self, addr, size, read=False, write=True):
     res = self.WatchAddress(addr, size, read, write, error)
     if not res or not error.Success():
         raise LLDBError(f"Failed to make watchpoint at 0x{addr:0>8x}")
+    # Silence the default old value new value printing...
+    """
+    print("Trying to silence old new value printing...")
+    zzz = lldb.SBCommandReturnObject()
+    deb = self.GetDebugger();
+    deb.SetSelectedTarget(self)
+    z = deb.GetCommandInterpreter().HandleCommand("watchpoint command add -s python -o '' %s" % res.GetID(), zzz)
+    print(f"Res: {z}  {zzz}")
+    """
     return res
 
 lldb.SBTarget.watchpoint_by_address = watchpoint_by_address
