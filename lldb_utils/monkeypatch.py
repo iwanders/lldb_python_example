@@ -48,6 +48,7 @@ def watchpoint_by_address(self, addr, size, read=False, write=True):
     if not res or not error.Success():
         raise LLDBError(f"Failed to make watchpoint at 0x{addr:0>8x}")
     # Silence the default old value new value printing...
+    # No-go... it's hardcoded atm; https://github.com/llvm/llvm-project/blob/5286656609418c766272ff78e62fda41671ef4cb/lldb/source/Target/StopInfo.cpp#L1001
     """
     print("Trying to silence old new value printing...")
     zzz = lldb.SBCommandReturnObject()
