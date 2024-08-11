@@ -224,6 +224,12 @@ class Process:
         new_bytes = self.read_memory(offset=offset, size=size)
         return struct.unpack(spec, new_bytes)
 
+    def get_stopped_threads(self):
+        reasons = []
+        for t in self.process:
+            reasons.append(t.GetStopReason())
+        return reasons
+
 class Target:
     def __str__(self):
         return f"<Target {str(self.target)}>"

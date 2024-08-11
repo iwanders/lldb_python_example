@@ -39,3 +39,15 @@ def breakpoint_by_address(self, addr):
     return res
 
 lldb.SBTarget.breakpoint_by_address = breakpoint_by_address
+
+def watchpoint_by_address(self, addr, size, read=False, write=True):
+    #WatchAddress(self, *args)
+    #WatchAddress(SBTarget self, lldb::addr_t addr, size_t size, bool read, bool write, SBError error) -> SBWatchpoint
+    error = lldb.SBError()
+    res = self.WatchAddress(addr, size, read, write, error)
+    if not res or not error.Success():
+        raise LLDBError(f"Failed to make watchpoint at 0x{addr:0>8x}")
+    return res
+
+lldb.SBTarget.watchpoint_by_address = watchpoint_by_address
+
