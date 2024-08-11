@@ -61,3 +61,14 @@ def watchpoint_by_address(self, addr, size, read=False, write=True):
 
 lldb.SBTarget.watchpoint_by_address = watchpoint_by_address
 
+@staticmethod
+def remove_watchpoint_print():
+    """
+        Function to remove the four lines printed by the default watchpoint printer.
+    """
+    # \033[F "\033[F"  move cursor to the beginning of the previous line
+    # \033[0K The "\033[0K" will delete to the end of the line
+    eraser = "\033[F\033[0K"
+    print(eraser * 4, end="")
+
+lldb.SBTarget.remove_watchpoint_print = remove_watchpoint_print
